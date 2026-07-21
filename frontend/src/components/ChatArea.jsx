@@ -19,11 +19,11 @@ import {
   Pencil,
   Copy,
   Download,
+  Zap,
 } from "lucide-react";
 
 marked.setOptions({ breaks: true });
 
-// Helper to get domain name from URL
 const getDomain = (url) => {
   try {
     return new URL(url).hostname.replace("www.", "");
@@ -43,6 +43,7 @@ export default function ChatArea({
   fileInputRef,
   selectedModel,
   setSelectedModel,
+  activeModelName,
   webSearchEnabled,
   setWebSearchEnabled,
   toggleSidebar,
@@ -70,53 +71,75 @@ export default function ChatArea({
 
   const models = [
     {
+      id: "abyss-auto",
+      name: "ABYSS AUTO",
+      desc: "AI Router (Picks best model)",
+    },
+    {
+      id: "qwen2.5-coder-32b-instruct",
+      name: "QWEN 2.5 CODER 32B",
+      desc: "Best for Coding",
+    },
+    {
       id: "llama-3.3-70b-versatile",
       name: "LLAMA 3.3 70B",
-      desc: "Default - Most capable",
+      desc: "Most capable general",
+    },
+    { id: "qwen-2.5-32b", name: "QWEN 2.5 32B", desc: "Strong multilingual" },
+    { id: "llama3-70b-8192", name: "LLAMA 3 70B", desc: "Stable legacy model" },
+    {
+      id: "mixtral-8x7b-32768",
+      name: "MIXTRAL 8x7B",
+      desc: "32k context window",
     },
     {
       id: "llama-3.1-8b-instant",
       name: "LLAMA 3.1 8B",
       desc: "Ultra-fast responses",
     },
-    { id: "llama3-70b-8192", name: "LLAMA 3 70B", desc: "Stable legacy model" },
+    { id: "gemma2-9b-it", name: "GEMMA 2 9B", desc: "Google lightweight" },
+    { id: "llama3-8b-8192", name: "LLAMA 3 8B", desc: "Legacy fast model" },
+    {
+      id: "llama-3.2-3b-preview",
+      name: "LLAMA 3.2 3B",
+      desc: "Minimal footprint",
+    },
+    {
+      id: "llama-3.2-1b-preview",
+      name: "LLAMA 3.2 1B",
+      desc: "Smallest/Edge model",
+    },
   ];
 
   useEffect(() => {
-    if (scrollRef.current) {
+    if (scrollRef.current)
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
   }, [messages]);
 
-  // Auto-resize textarea logic
   useEffect(() => {
     const el = textareaRef.current;
     if (el) {
       el.style.height = "auto";
-      el.style.height = `${Math.min(el.scrollHeight, 200)}px`; // Max 200px height
+      el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
     }
   }, [input]);
 
   const handleScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
-    if (el.scrollHeight - el.scrollTop - el.clientHeight > 300) {
+    if (el.scrollHeight - el.scrollTop - el.clientHeight > 300)
       setShowScrollButton(true);
-    } else {
-      setShowScrollButton(false);
-    }
+    else setShowScrollButton(false);
   };
 
   const scrollToBottom = () => {
-    if (scrollRef.current) {
+    if (scrollRef.current)
       scrollRef.current.scrollTo({
         top: scrollRef.current.scrollHeight,
         behavior: "smooth",
       });
-    }
   };
 
-  // Close context menu on any click or scroll
   useEffect(() => {
     const closeMenu = () =>
       setContextMenu((prev) => ({ ...prev, visible: false }));
@@ -138,30 +161,24 @@ export default function ChatArea({
   useEffect(() => {
     const container = chatContainerRef.current;
     if (!container) return;
-
     const codeBlocks = container.querySelectorAll("pre code");
     codeBlocks.forEach((block) => {
       if (!block.dataset.highlighted) {
         hljs.highlightElement(block);
         block.dataset.highlighted = "yes";
       }
-
       const pre = block.parentElement;
       if (!pre.querySelector(".code-header")) {
         const langClass = block.className.match(/language-(\w+)/);
         const lang = langClass ? langClass[1] : "code";
-
         const header = document.createElement("div");
         header.className = "code-header";
-
         const langLabel = document.createElement("span");
         langLabel.textContent = lang.toUpperCase();
-
         const copyBtn = document.createElement("button");
         copyBtn.className = "copy-btn";
         copyBtn.innerHTML =
           '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg> COPY';
-
         copyBtn.onclick = () => {
           navigator.clipboard.writeText(block.innerText);
           copyBtn.innerHTML =
@@ -171,7 +188,6 @@ export default function ChatArea({
               '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg> COPY';
           }, 2000);
         };
-
         header.appendChild(langLabel);
         header.appendChild(copyBtn);
         pre.insertBefore(header, block);
@@ -187,7 +203,6 @@ export default function ChatArea({
   };
 
   const handleKeyDown = (e) => {
-    // Enter to send, Shift+Enter for newline
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
@@ -198,22 +213,18 @@ export default function ChatArea({
     if (isStreaming) return;
     onSend(text);
   };
-
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (file) setAttachedFile(file);
   };
-
   const removeFile = () => {
     setAttachedFile(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
-
   const startEditing = (index, content) => {
     setEditingMsgIndex(index);
     setEditText(content);
   };
-
   const saveEdit = () => {
     if (!editText.trim()) return;
     onEditMessage(editingMsgIndex, editText);
@@ -229,7 +240,26 @@ export default function ChatArea({
     return <FileText size={12} className="text-blue-400" />;
   };
 
-  const activeModel = models.find((m) => m.id === selectedModel) || models[0];
+  const displayedModel =
+    models.find((m) => m.id === activeModelName) ||
+    models.find((m) => m.id === selectedModel) ||
+    models[0];
+
+  const renderUserContent = (content) => {
+    const fileMatch = content.match(/📎 (.*?)\n([\s\S]*)/);
+    if (fileMatch) {
+      return (
+        <p className="text-gray-200 text-sm whitespace-pre-wrap text-left">
+          {fileMatch[2]}
+        </p>
+      );
+    }
+    return (
+      <p className="text-gray-200 text-sm whitespace-pre-wrap text-left">
+        {content}
+      </p>
+    );
+  };
 
   return (
     <div className="flex-1 flex flex-col h-full bg-transparent relative">
@@ -248,7 +278,6 @@ export default function ChatArea({
         </div>
 
         <div className="flex items-center gap-2 md:gap-3">
-          {/* Export Button */}
           {messages.length > 0 && (
             <button
               onClick={onExport}
@@ -264,7 +293,15 @@ export default function ChatArea({
               onClick={() => setIsModelMenuOpen(!isModelMenuOpen)}
               className="flex items-center gap-2 text-xs text-gray-300 glass px-3 py-1.5 rounded-full hover:border-purple-500 transition-colors font-cosmic tracking-wider"
             >
-              <span className="hidden sm:inline">{activeModel.name}</span>
+              {selectedModel === "abyss-auto" &&
+                activeModelName !== "abyss-auto" && (
+                  <Zap
+                    size={12}
+                    className="text-amber-400 animate-pulse"
+                    fill="currentColor"
+                  />
+                )}
+              <span className="hidden sm:inline">{displayedModel.name}</span>
               <span className="sm:hidden">MODEL</span>
               <ChevronDown
                 size={14}
@@ -278,7 +315,7 @@ export default function ChatArea({
                   className="fixed inset-0 z-10"
                   onClick={() => setIsModelMenuOpen(false)}
                 ></div>
-                <div className="absolute right-0 mt-2 w-64 glass rounded-xl p-2 z-20 shadow-2xl border-purple-900/50 origin-top-right animate-[fadeIn_0.1s_ease-out]">
+                <div className="absolute right-0 mt-2 w-72 glass rounded-xl p-2 z-20 shadow-2xl border-purple-900/50 origin-top-right animate-[fadeIn_0.1s_ease-out] max-h-[400px] overflow-y-auto">
                   {models.map((m) => (
                     <button
                       key={m.id}
@@ -289,7 +326,10 @@ export default function ChatArea({
                       className="w-full flex items-start gap-3 p-2.5 rounded-lg hover:bg-purple-900/40 transition-colors text-left"
                     >
                       <div className="flex-1">
-                        <p className="text-xs font-cosmic text-gray-200 tracking-wider">
+                        <p className="text-xs font-cosmic text-gray-200 tracking-wider flex items-center gap-1">
+                          {m.id === "abyss-auto" && (
+                            <Zap size={10} className="text-amber-400" />
+                          )}
                           {m.name}
                         </p>
                         <p className="text-[10px] text-gray-500 mt-0.5">
@@ -386,9 +426,11 @@ export default function ChatArea({
           ) : (
             <div className="max-w-3xl mx-auto py-6 px-4 md:px-6 space-y-6">
               {messages.map((msg, i) => {
-                const visibleContent = msg.content.split("[SOURCES_JSON]")[0];
+                const visibleContent = msg.content
+                  .split("[SOURCES_JSON]")[0]
+                  .replace("[MODEL_ROUTED]", "")
+                  .replace("[/MODEL_ROUTED]", "");
                 const isLastMessage = i === messages.length - 1;
-
                 return (
                   <div
                     key={i}
@@ -423,9 +465,7 @@ export default function ChatArea({
                             </div>
                           </div>
                         ) : (
-                          <p className="text-gray-200 text-sm whitespace-pre-wrap text-left">
-                            {msg.content}
-                          </p>
+                          renderUserContent(msg.content)
                         )
                       ) : (
                         <>
@@ -469,7 +509,6 @@ export default function ChatArea({
                       )}
                     </div>
 
-                    {/* Regenerate Button under last AI Message */}
                     {msg.role === "assistant" &&
                       isLastMessage &&
                       !isStreaming &&
@@ -491,7 +530,6 @@ export default function ChatArea({
         </div>
       </div>
 
-      {/* Scroll to Bottom Button */}
       {showScrollButton && (
         <button
           onClick={scrollToBottom}
@@ -502,7 +540,6 @@ export default function ChatArea({
         </button>
       )}
 
-      {/* Input Area */}
       <div className="p-3 md:p-4 bg-gradient-to-t from-black via-black/80 to-transparent">
         <div className="max-w-3xl mx-auto">
           {attachedFile && (
@@ -537,7 +574,6 @@ export default function ChatArea({
             >
               <Paperclip size={18} />
             </button>
-
             <button
               type="button"
               onClick={() => setWebSearchEnabled(!webSearchEnabled)}
@@ -586,7 +622,6 @@ export default function ChatArea({
         </div>
       </div>
 
-      {/* CUSTOM RIGHT-CLICK CONTEXT MENU */}
       {contextMenu.visible && (
         <div
           className="fixed z-50 w-44 glass rounded-lg p-1.5 shadow-2xl border border-purple-900/50 animate-[fadeIn_0.1s_ease-out]"
@@ -628,7 +663,6 @@ export default function ChatArea({
         </div>
       )}
 
-      {/* FULL WINDOW SOURCES PANEL OVERLAY */}
       {panelSources && (
         <div
           className="fixed inset-0 z-40 flex justify-end bg-black/60 backdrop-blur-sm animate-[fadeIn_0.1s_ease-out]"

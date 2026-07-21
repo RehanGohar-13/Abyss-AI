@@ -14,7 +14,8 @@ function App() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [activeCategory, setActiveCategory] = useState("general");
   const [attachedFile, setAttachedFile] = useState(null);
-  const [selectedModel, setSelectedModel] = useState("llama-3.3-70b-versatile");
+  const [selectedModel, setSelectedModel] = useState("abyss-auto");
+  const [activeModelName, setActiveModelName] = useState("abyss-auto");
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const abortControllerRef = useRef(null);
@@ -29,16 +30,18 @@ function App() {
     localStorage.setItem("abyss-conversations", JSON.stringify(conversations));
   }, [conversations]);
 
+  useEffect(() => {
+    setActiveModelName(selectedModel);
+  }, [selectedModel]);
+
   const activeConv = conversations.find((c) => c.id === activeId);
 
-  // Helper to clean up empty aborted messages
   const cleanupAbortedMessage = (currentId) => {
     setConversations((prev) => {
       const updated = prev.map((c) => {
         if (c.id !== currentId) return c;
         const msgs = [...c.messages];
         const lastMsg = msgs[msgs.length - 1];
-        // If the AI message is completely empty, remove it entirely
         if (
           lastMsg &&
           lastMsg.role === "assistant" &&
@@ -54,7 +57,7 @@ function App() {
   };
 
   const runStream = useCallback(
-    async (currentId, userMsgText, history) => {
+    async (currentId, userMsgText, history, imageData = null) => {
       setIsStreaming(true);
       const controller = new AbortController();
       abortControllerRef.current = controller;
@@ -79,6 +82,16 @@ function App() {
                 const msgs = [...c.messages];
                 let content = msgs[msgs.length - 1].content + chunk;
                 let sources = msgs[msgs.length - 1].sources;
+
+                if (content.includes("[MODEL_ROUTED]")) {
+                  const modelMatch = content.match(
+                    /\[MODEL_ROUTED\](.*?)\[\/MODEL_ROUTED\]/,
+                  );
+                  if (modelMatch) {
+                    setActiveModelName(modelMatch[1]);
+                    content = content.replace(modelMatch[0], "");
+                  }
+                }
 
                 if (content.includes("[SOURCES_JSON]")) {
                   const match = content.match(
@@ -107,6 +120,7 @@ function App() {
           selectedModel,
           globalContext,
           webSearchEnabled,
+          imageData,
         );
       } catch (err) {
         if (err.name === "AbortError") {
@@ -150,10 +164,27 @@ function App() {
       }
 
       setActiveId(currentId);
+      setActiveModelName(selectedModel);
 
-      const displayText = attachedFile
-        ? `📎 ${attachedFile.name}\n${text}`
-        : text;
+      const currentFile = attachedFile;
+
+      // Handle Image vs Text/PDF
+      let imageData = null;
+      let displayText = text;
+
+      if (currentFile) {
+        if (currentFile.type.startsWith("image/")) {
+          imageData = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target.result);
+            reader.readAsDataURL(currentFile);
+          });
+          displayText = `🖼️ ${currentFile.name}\n${text}`;
+        } else {
+          displayText = `📎 ${currentFile.name}\n${text}`;
+        }
+      }
+
       const userMsg = { role: "user", content: displayText };
       const aiMsg = { role: "assistant", content: "", sources: null };
 
@@ -167,11 +198,11 @@ function App() {
         return updated;
       });
 
-      const currentFile = attachedFile;
       setAttachedFile(null);
 
       try {
-        if (currentFile) {
+        if (currentFile && !imageData) {
+          // Non-image file (PDF/Code)
           setIsStreaming(true);
           const controller = new AbortController();
           abortControllerRef.current = controller;
@@ -197,7 +228,8 @@ function App() {
           );
           setIsStreaming(false);
         } else {
-          await runStream(currentId, text, history);
+          // Standard chat or Image chat
+          await runStream(currentId, text, history, imageData);
         }
 
         if (isNewChat) {
@@ -217,25 +249,21 @@ function App() {
         }
       }
     },
-    [activeId, attachedFile, runStream],
+    [activeId, attachedFile, runStream, selectedModel],
   );
 
   const handleRegenerate = useCallback(
     async (msgIndex = null) => {
       if (!activeId || isStreaming) return;
-
       const currentConv = conversationsRef.current.find(
         (c) => c.id === activeId,
       );
       if (!currentConv) return;
-
       let userMsgIndex = -1;
-
       if (msgIndex !== null) {
         const targetMsg = currentConv.messages[msgIndex];
-        if (targetMsg.role === "user") {
-          userMsgIndex = msgIndex;
-        } else {
+        if (targetMsg.role === "user") userMsgIndex = msgIndex;
+        else {
           for (let i = msgIndex; i >= 0; i--) {
             if (currentConv.messages[i].role === "user") {
               userMsgIndex = i;
@@ -248,12 +276,12 @@ function App() {
           .map((m) => m.role)
           .lastIndexOf("user");
       }
-
       if (userMsgIndex === -1) return;
 
       const lastUserMsg = currentConv.messages[userMsgIndex];
-      const apiUserMsg = lastUserMsg.content.replace(/^📎 .*?\n/, "");
-
+      const apiUserMsg = lastUserMsg.content
+        .replace(/^📎 .*?\n/, "")
+        .replace(/^🖼️ .*?\n/, "");
       const truncatedMessages = currentConv.messages.slice(0, userMsgIndex + 1);
       const aiMsg = { role: "assistant", content: "", sources: null };
       const updatedMessages = [...truncatedMessages, aiMsg];
@@ -265,7 +293,6 @@ function App() {
         conversationsRef.current = updated;
         return updated;
       });
-
       const history = truncatedMessages
         .slice(0, -1)
         .filter((m) => m.content !== "")
@@ -278,17 +305,14 @@ function App() {
   const handleEditMessage = useCallback(
     async (msgIndex, newText) => {
       if (!activeId || isStreaming) return;
-
       const currentConv = conversationsRef.current.find(
         (c) => c.id === activeId,
       );
       if (!currentConv) return;
-
       const updatedMsgsBefore = currentConv.messages.slice(0, msgIndex);
       const editedUserMsg = { role: "user", content: newText };
       const aiMsg = { role: "assistant", content: "", sources: null };
       const updatedMessages = [...updatedMsgsBefore, editedUserMsg, aiMsg];
-
       setConversations((prev) => {
         const updated = prev.map((c) =>
           c.id === activeId ? { ...c, messages: updatedMessages } : c,
@@ -296,7 +320,6 @@ function App() {
         conversationsRef.current = updated;
         return updated;
       });
-
       const history = updatedMsgsBefore
         .filter((m) => m.content !== "")
         .map((m) => ({ role: m.role, content: m.content }));
@@ -306,29 +329,23 @@ function App() {
   );
 
   const handleStop = () => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
+    if (abortControllerRef.current) abortControllerRef.current.abort();
   };
-
   const handleNewChat = () => {
     setActiveId(null);
     setActiveCategory("general");
     setIsSidebarOpen(false);
   };
-
   const handleSelectChat = (id) => {
     setActiveId(id);
     const c = conversations.find((c) => c.id === id);
     setActiveCategory(c?.category || "general");
     setIsSidebarOpen(false);
   };
-
   const handleDelete = (id) => {
     setConversations((prev) => prev.filter((c) => c.id !== id));
     if (activeId === id) setActiveId(null);
   };
-
   const handleExport = () => {
     if (!activeConv) return;
     let md = `# ${activeConv.title}\n\n`;
@@ -375,6 +392,7 @@ function App() {
             fileInputRef={fileInputRef}
             selectedModel={selectedModel}
             setSelectedModel={setSelectedModel}
+            activeModelName={activeModelName}
             webSearchEnabled={webSearchEnabled}
             setWebSearchEnabled={setWebSearchEnabled}
             toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}

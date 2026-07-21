@@ -6,17 +6,24 @@ export async function streamChat(
   model,
   globalContext,
   useWebSearch,
+  imageData = null,
 ) {
+  const body = {
+    message,
+    history,
+    model,
+    global_context: globalContext,
+    use_web_search: useWebSearch,
+  };
+
+  if (imageData) {
+    body.image_data = imageData;
+  }
+
   const response = await fetch("http://localhost:5000/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      message,
-      history,
-      model,
-      global_context: globalContext,
-      use_web_search: useWebSearch,
-    }),
+    body: JSON.stringify(body),
     signal,
   });
 
