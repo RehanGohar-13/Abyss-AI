@@ -20,6 +20,8 @@ import {
   Copy,
   Download,
   Zap,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 
 marked.setOptions({ breaks: true });
@@ -37,7 +39,6 @@ export default function ChatArea({
   onSend,
   isStreaming,
   onStop,
-  category,
   attachedFile,
   setAttachedFile,
   fileInputRef,
@@ -47,6 +48,7 @@ export default function ChatArea({
   webSearchEnabled,
   setWebSearchEnabled,
   toggleSidebar,
+  isDesktopCollapsed,
   onRegenerate,
   onEditMessage,
   onExport,
@@ -232,14 +234,6 @@ export default function ChatArea({
     setEditText("");
   };
 
-  const getCategoryIcon = () => {
-    if (category === "coding")
-      return <Code2 size={12} className="text-emerald-400" />;
-    if (category === "reasoning")
-      return <Brain size={12} className="text-amber-400" />;
-    return <FileText size={12} className="text-blue-400" />;
-  };
-
   const displayedModel =
     models.find((m) => m.id === activeModelName) ||
     models.find((m) => m.id === selectedModel) ||
@@ -266,9 +260,21 @@ export default function ChatArea({
       {/* Header */}
       <div className="py-3 px-4 md:px-6 border-b border-purple-900/30 flex items-center justify-between glass relative z-20">
         <div className="flex items-center gap-3">
+          {/* Dynamic Sidebar Toggle */}
           <button
-            className="md:hidden p-2 text-gray-400 hover:text-white transition-colors"
             onClick={toggleSidebar}
+            className="p-2 text-gray-400 hover:text-white transition-colors hidden md:block"
+            title={isDesktopCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+          >
+            {isDesktopCollapsed ? (
+              <PanelLeftOpen size={20} />
+            ) : (
+              <PanelLeftClose size={20} />
+            )}
+          </button>
+          <button
+            onClick={toggleSidebar}
+            className="p-2 text-gray-400 hover:text-white transition-colors md:hidden"
           >
             <Menu size={20} />
           </button>
@@ -348,13 +354,6 @@ export default function ChatArea({
               </>
             )}
           </div>
-
-          <div className="hidden md:flex items-center gap-2 text-xs text-gray-400 capitalize glass px-3 py-1.5 rounded-full">
-            {getCategoryIcon()}{" "}
-            <span className="font-cosmic tracking-wider">
-              {category} module
-            </span>
-          </div>
         </div>
       </div>
 
@@ -431,6 +430,12 @@ export default function ChatArea({
                   .replace("[MODEL_ROUTED]", "")
                   .replace("[/MODEL_ROUTED]", "");
                 const isLastMessage = i === messages.length - 1;
+                const isThinking =
+                  isStreaming &&
+                  isLastMessage &&
+                  msg.role === "assistant" &&
+                  visibleContent.trim() === "";
+
                 return (
                   <div
                     key={i}
@@ -469,12 +474,24 @@ export default function ChatArea({
                         )
                       ) : (
                         <>
-                          <div
-                            className="prose text-gray-300 text-sm text-left"
-                            dangerouslySetInnerHTML={{
-                              __html: marked.parse(visibleContent || "..."),
-                            }}
-                          />
+                          {isThinking ? (
+                            <div className="flex items-center gap-1.5 h-6">
+                              <span className="w-2 h-2 bg-purple-500 rounded-full animate-pulse [animation-delay:-0.3s]"></span>
+                              <span className="w-2 h-2 bg-purple-500 rounded-full animate-pulse [animation-delay:-0.15s]"></span>
+                              <span className="w-2 h-2 bg-purple-500 rounded-full animate-pulse"></span>
+                              <span className="text-xs text-purple-400/70 ml-2 font-cosmic tracking-widest">
+                                TRANSMITTING...
+                              </span>
+                            </div>
+                          ) : (
+                            <div
+                              className="prose text-gray-300 text-sm text-left"
+                              dangerouslySetInnerHTML={{
+                                __html: marked.parse(visibleContent || "..."),
+                              }}
+                            />
+                          )}
+
                           {msg.sources && msg.sources.length > 0 && (
                             <div className="mt-4 pt-3 border-t border-purple-900/30">
                               <div className="flex items-center gap-2 flex-wrap">
@@ -616,7 +633,7 @@ export default function ChatArea({
           </div>
           <p className="text-center text-[10px] md:text-xs text-gray-700 mt-2 font-cosmic tracking-wider">
             {webSearchEnabled
-              ? "WEB SEARCH ACTIVATED - FETCHING REAL-TIME DATA"
+              ? "GALAXY MODE ACTIVATED - FETCHING REAL-TIME DATA"
               : "ENTER TO SEND, SHIFT+ENTER FOR NEW LINE"}
           </p>
         </div>

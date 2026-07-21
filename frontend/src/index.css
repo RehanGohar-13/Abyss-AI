@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Space+Grotesk:wght@300;400;500;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=Space+Grotesk:wght@300;400;500;600&display=swap");
 @import url("https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css");
 
 @tailwind base;
@@ -31,8 +31,9 @@ body {
   background: #6d28d9;
 }
 
+/* Updated to Sora for a cleaner look */
 .font-cosmic {
-  font-family: "Orbitron", sans-serif;
+  font-family: "Sora", sans-serif;
 }
 
 .glass {
@@ -103,7 +104,7 @@ body {
   background: rgba(139, 92, 246, 0.1);
   border-bottom: 1px solid rgba(139, 92, 246, 0.3);
   border-radius: 8px 8px 0 0;
-  font-family: "Orbitron", sans-serif;
+  font-family: "Sora", sans-serif;
   font-size: 0.7rem;
   letter-spacing: 0.1em;
   color: #a5b4fc;
@@ -116,7 +117,7 @@ body {
   border: none;
   color: #a5b4fc;
   cursor: pointer;
-  font-family: "Orbitron", sans-serif;
+  font-family: "Sora", sans-serif;
   font-size: 0.7rem;
   transition: color 0.2s;
 }

@@ -12,14 +12,15 @@ function App() {
   const [activeId, setActiveId] = useState(() => conversations[0]?.id || null);
   const [searchTerm, setSearchTerm] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
-  const [activeCategory, setActiveCategory] = useState("general");
   const [attachedFile, setAttachedFile] = useState(null);
   const [selectedModel, setSelectedModel] = useState("abyss-auto");
   const [activeModelName, setActiveModelName] = useState("abyss-auto");
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Mobile drawer
+  const [isDesktopCollapsed, setIsDesktopCollapsed] = useState(false); // Desktop collapse
   const abortControllerRef = useRef(null);
   const fileInputRef = useRef(null);
+  const saveTimeoutRef = useRef(null);
 
   const conversationsRef = useRef(conversations);
   useEffect(() => {
@@ -27,7 +28,13 @@ function App() {
   }, [conversations]);
 
   useEffect(() => {
-    localStorage.setItem("abyss-conversations", JSON.stringify(conversations));
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(() => {
+      localStorage.setItem(
+        "abyss-conversations",
+        JSON.stringify(conversations),
+      );
+    }, 500);
   }, [conversations]);
 
   useEffect(() => {
@@ -57,7 +64,7 @@ function App() {
   };
 
   const runStream = useCallback(
-    async (currentId, userMsgText, history, imageData = null) => {
+    async (currentId, userMsgText, history) => {
       setIsStreaming(true);
       const controller = new AbortController();
       abortControllerRef.current = controller;
@@ -67,8 +74,9 @@ function App() {
         .slice(0, 5)
         .map((c) => ({
           title: c.title,
-          last_msg:
-            c.messages.filter((m) => m.role === "user").pop()?.content || "",
+          last_msg: (
+            c.messages.filter((m) => m.role === "user").pop()?.content || ""
+          ).slice(0, 150),
         }));
 
       try {
@@ -120,13 +128,10 @@ function App() {
           selectedModel,
           globalContext,
           webSearchEnabled,
-          imageData,
         );
       } catch (err) {
         if (err.name === "AbortError") {
           cleanupAbortedMessage(currentId);
-        } else {
-          console.error("Streaming error:", err);
         }
       } finally {
         setIsStreaming(false);
@@ -167,22 +172,10 @@ function App() {
       setActiveModelName(selectedModel);
 
       const currentFile = attachedFile;
-
-      // Handle Image vs Text/PDF
-      let imageData = null;
       let displayText = text;
 
       if (currentFile) {
-        if (currentFile.type.startsWith("image/")) {
-          imageData = await new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onload = (e) => resolve(e.target.result);
-            reader.readAsDataURL(currentFile);
-          });
-          displayText = `🖼️ ${currentFile.name}\n${text}`;
-        } else {
-          displayText = `📎 ${currentFile.name}\n${text}`;
-        }
+        displayText = `📎 ${currentFile.name}\n${text}`;
       }
 
       const userMsg = { role: "user", content: displayText };
@@ -201,8 +194,7 @@ function App() {
       setAttachedFile(null);
 
       try {
-        if (currentFile && !imageData) {
-          // Non-image file (PDF/Code)
+        if (currentFile) {
           setIsStreaming(true);
           const controller = new AbortController();
           abortControllerRef.current = controller;
@@ -228,8 +220,7 @@ function App() {
           );
           setIsStreaming(false);
         } else {
-          // Standard chat or Image chat
-          await runStream(currentId, text, history, imageData);
+          await runStream(currentId, text, history);
         }
 
         if (isNewChat) {
@@ -241,8 +232,6 @@ function App() {
           );
         }
       } catch (err) {
-        if (err.name !== "AbortError")
-          console.error("Upload/Stream error:", err);
         if (err.name === "AbortError") {
           cleanupAbortedMessage(currentId);
           setIsStreaming(false);
@@ -279,9 +268,7 @@ function App() {
       if (userMsgIndex === -1) return;
 
       const lastUserMsg = currentConv.messages[userMsgIndex];
-      const apiUserMsg = lastUserMsg.content
-        .replace(/^📎 .*?\n/, "")
-        .replace(/^🖼️ .*?\n/, "");
+      const apiUserMsg = lastUserMsg.content.replace(/^📎 .*?\n/, "");
       const truncatedMessages = currentConv.messages.slice(0, userMsgIndex + 1);
       const aiMsg = { role: "assistant", content: "", sources: null };
       const updatedMessages = [...truncatedMessages, aiMsg];
@@ -333,23 +320,28 @@ function App() {
   };
   const handleNewChat = () => {
     setActiveId(null);
-    setActiveCategory("general");
     setIsSidebarOpen(false);
   };
   const handleSelectChat = (id) => {
     setActiveId(id);
-    const c = conversations.find((c) => c.id === id);
-    setActiveCategory(c?.category || "general");
     setIsSidebarOpen(false);
   };
   const handleDelete = (id) => {
     setConversations((prev) => prev.filter((c) => c.id !== id));
     if (activeId === id) setActiveId(null);
   };
-  const handleExport = () => {
-    if (!activeConv) return;
-    let md = `# ${activeConv.title}\n\n`;
-    activeConv.messages.forEach((m) => {
+
+  const handleRenameChat = (id, newTitle) => {
+    setConversations((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, title: newTitle } : c)),
+    );
+  };
+
+  const handleExportChatById = (id) => {
+    const conv = conversations.find((c) => c.id === id);
+    if (!conv) return;
+    let md = `# ${conv.title}\n\n`;
+    conv.messages.forEach((m) => {
       const cleanContent = m.content.split("[SOURCES_JSON]")[0];
       md +=
         m.role === "user"
@@ -360,14 +352,22 @@ function App() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${activeConv.title.replace(/[^a-z0-9]/gi, "_").toLowerCase()}.md`;
+    a.download = `${conv.title.replace(/[^a-z0-9]/gi, "_").toLowerCase()}.md`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
+  const toggleSidebar = () => {
+    if (window.innerWidth >= 768) {
+      setIsDesktopCollapsed(!isDesktopCollapsed);
+    } else {
+      setIsSidebarOpen(!isSidebarOpen);
+    }
+  };
+
   return (
     <div className="flex h-screen overflow-hidden relative z-10">
-      <Starfield />
+      <Starfield isGalaxyMode={webSearchEnabled} />
       <div className="flex w-full h-full relative z-10">
         <Sidebar
           conversations={conversations}
@@ -375,10 +375,13 @@ function App() {
           onSelect={handleSelectChat}
           onNew={handleNewChat}
           onDelete={handleDelete}
+          onRename={handleRenameChat}
+          onExportChat={handleExportChatById}
           searchTerm={searchTerm}
           setSearchTerm={setSearchTerm}
           isSidebarOpen={isSidebarOpen}
           setIsSidebarOpen={setIsSidebarOpen}
+          isDesktopCollapsed={isDesktopCollapsed}
         />
         <main className="flex-1 h-full">
           <ChatArea
@@ -386,7 +389,6 @@ function App() {
             onSend={handleSend}
             isStreaming={isStreaming}
             onStop={handleStop}
-            category={activeCategory}
             attachedFile={attachedFile}
             setAttachedFile={setAttachedFile}
             fileInputRef={fileInputRef}
@@ -395,10 +397,11 @@ function App() {
             activeModelName={activeModelName}
             webSearchEnabled={webSearchEnabled}
             setWebSearchEnabled={setWebSearchEnabled}
-            toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+            toggleSidebar={toggleSidebar}
+            isDesktopCollapsed={isDesktopCollapsed}
             onRegenerate={handleRegenerate}
             onEditMessage={handleEditMessage}
-            onExport={handleExport}
+            onExport={() => handleExportChatById(activeId)}
           />
         </main>
       </div>

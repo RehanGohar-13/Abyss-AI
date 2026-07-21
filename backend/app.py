@@ -50,6 +50,16 @@ def route_category(msg):
 
 def route_model_automatically(user_msg, history):
     """Uses a fast LLM to analyze the prompt and pick the best model."""
+    
+    # Estimate tokens to avoid Groq's strict TPM limits on smaller models
+    # 8B model has 6,000 TPM limit. 1 token ~= 4 chars.
+    history_text = "".join([m.get("content", "") if isinstance(m.get("content"), str) else "" for m in history])
+    estimated_tokens = (len(history_text) + len(user_msg)) / 4
+    
+    # If the conversation is long, force 70B which has a higher 30k TPM limit
+    if estimated_tokens > 4000:
+        return "llama-3.3-70b-versatile"
+
     prompt = f"""Analyze the following user prompt and classify it into exactly one category: "coding", "reasoning", "fast", "general".
     "coding": writing, debugging, or explaining code.
     "reasoning": math, logic, complex step-by-step analysis.
