@@ -16,6 +16,7 @@ function App() {
   const [attachedFile, setAttachedFile] = useState(null);
   const [selectedModel, setSelectedModel] = useState("llama-3.3-70b-versatile");
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Mobile drawer state
   const abortControllerRef = useRef(null);
   const fileInputRef = useRef(null);
 
@@ -124,7 +125,6 @@ function App() {
                   let content = msgs[msgs.length - 1].content + chunk;
                   let sources = msgs[msgs.length - 1].sources;
 
-                  // Intercept sources JSON
                   if (content.includes("[SOURCES_JSON]")) {
                     const match = content.match(
                       /\[SOURCES_JSON\](.*?)\[\/SOURCES_JSON\]/s,
@@ -184,6 +184,14 @@ function App() {
   const handleNewChat = () => {
     setActiveId(null);
     setActiveCategory("general");
+    setIsSidebarOpen(false); // Close on mobile
+  };
+
+  const handleSelectChat = (id) => {
+    setActiveId(id);
+    const c = conversations.find((c) => c.id === id);
+    setActiveCategory(c?.category || "general");
+    setIsSidebarOpen(false); // Close on mobile
   };
 
   const handleDelete = (id) => {
@@ -198,15 +206,13 @@ function App() {
         <Sidebar
           conversations={conversations}
           activeId={activeId}
-          onSelect={(id) => {
-            setActiveId(id);
-            const c = conversations.find((c) => c.id === id);
-            setActiveCategory(c?.category || "general");
-          }}
+          onSelect={handleSelectChat}
           onNew={handleNewChat}
           onDelete={handleDelete}
           searchTerm={searchTerm}
           setSearchTerm={setSearchTerm}
+          isSidebarOpen={isSidebarOpen}
+          setIsSidebarOpen={setIsSidebarOpen}
         />
         <main className="flex-1 h-full">
           <ChatArea
@@ -222,6 +228,7 @@ function App() {
             setSelectedModel={setSelectedModel}
             webSearchEnabled={webSearchEnabled}
             setWebSearchEnabled={setWebSearchEnabled}
+            toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
           />
         </main>
       </div>

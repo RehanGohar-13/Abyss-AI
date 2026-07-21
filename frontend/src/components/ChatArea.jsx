@@ -14,6 +14,7 @@ import {
   Check,
   Globe,
   ExternalLink,
+  Menu,
 } from "lucide-react";
 
 marked.setOptions({ breaks: true });
@@ -40,10 +41,12 @@ export default function ChatArea({
   setSelectedModel,
   webSearchEnabled,
   setWebSearchEnabled,
+  toggleSidebar,
 }) {
   const [input, setInput] = useState("");
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
-  const [panelSources, setPanelSources] = useState(null); // Lifted state for the full window panel
+  const [panelSources, setPanelSources] = useState(null);
+  const [showScrollButton, setShowScrollButton] = useState(false);
   const scrollRef = useRef(null);
   const chatContainerRef = useRef(null);
 
@@ -66,6 +69,26 @@ export default function ChatArea({
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
+
+  const handleScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    // Show button if user is scrolled up more than 300px from the bottom
+    if (el.scrollHeight - el.scrollTop - el.clientHeight > 300) {
+      setShowScrollButton(true);
+    } else {
+      setShowScrollButton(false);
+    }
+  };
+
+  const scrollToBottom = () => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTo({
+        top: scrollRef.current.scrollHeight,
+        behavior: "smooth",
+      });
+    }
+  };
 
   useEffect(() => {
     const container = chatContainerRef.current;
@@ -146,19 +169,29 @@ export default function ChatArea({
   return (
     <div className="flex-1 flex flex-col h-full bg-transparent relative">
       {/* Header */}
-      <div className="py-3 px-6 border-b border-purple-900/30 flex items-center justify-between glass relative z-20">
-        <h1 className="text-lg font-cosmic tracking-[0.2em] text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-indigo-400">
-          ABYSS AI
-        </h1>
-
+      <div className="py-3 px-4 md:px-6 border-b border-purple-900/30 flex items-center justify-between glass relative z-20">
         <div className="flex items-center gap-3">
+          {/* Mobile Hamburger Menu */}
+          <button
+            className="md:hidden p-2 text-gray-400 hover:text-white transition-colors"
+            onClick={toggleSidebar}
+          >
+            <Menu size={20} />
+          </button>
+          <h1 className="text-lg font-cosmic tracking-[0.2em] text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-indigo-400">
+            ABYSS AI
+          </h1>
+        </div>
+
+        <div className="flex items-center gap-2 md:gap-3">
           {/* Custom Model Selector */}
           <div className="relative">
             <button
               onClick={() => setIsModelMenuOpen(!isModelMenuOpen)}
               className="flex items-center gap-2 text-xs text-gray-300 glass px-3 py-1.5 rounded-full hover:border-purple-500 transition-colors font-cosmic tracking-wider"
             >
-              <span>{activeModel.name}</span>
+              <span className="hidden sm:inline">{activeModel.name}</span>
+              <span className="sm:hidden">MODEL</span>
               <ChevronDown
                 size={14}
                 className={`text-purple-400 transition-transform ${isModelMenuOpen ? "rotate-180" : ""}`}
@@ -203,7 +236,7 @@ export default function ChatArea({
           </div>
 
           {/* Category Badge */}
-          <div className="flex items-center gap-2 text-xs text-gray-400 capitalize glass px-3 py-1.5 rounded-full">
+          <div className="hidden md:flex items-center gap-2 text-xs text-gray-400 capitalize glass px-3 py-1.5 rounded-full">
             {getCategoryIcon()}{" "}
             <span className="font-cosmic tracking-wider">
               {category} module
@@ -213,7 +246,11 @@ export default function ChatArea({
       </div>
 
       {/* Messages or Empty State */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto">
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto relative"
+      >
         <div ref={chatContainerRef} className="h-full">
           {messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center p-8 relative">
@@ -274,7 +311,7 @@ export default function ChatArea({
               </div>
             </div>
           ) : (
-            <div className="max-w-3xl mx-auto py-6 px-6 space-y-6">
+            <div className="max-w-3xl mx-auto py-6 px-4 md:px-6 space-y-6">
               {messages.map((msg, i) => {
                 const visibleContent = msg.content.split("[SOURCES_JSON]")[0];
 
@@ -339,8 +376,19 @@ export default function ChatArea({
         </div>
       </div>
 
+      {/* Scroll to Bottom Button - Moved outside scroll container with absolute positioning */}
+      {showScrollButton && (
+        <button
+          onClick={scrollToBottom}
+          className="absolute bottom-24 left-1/2 -translate-x-1/2 p-2 glass rounded-full border border-purple-900/50 text-purple-400 hover:text-white transition-all z-10 animate-[fadeIn_0.2s_ease-out] shadow-xl"
+          title="Scroll to bottom"
+        >
+          <ChevronDown size={20} />
+        </button>
+      )}
+
       {/* Input Area */}
-      <div className="p-4 bg-gradient-to-t from-black via-black/80 to-transparent">
+      <div className="p-3 md:p-4 bg-gradient-to-t from-black via-black/80 to-transparent">
         <form onSubmit={handleSubmit} className="max-w-3xl mx-auto">
           {/* File Preview Chip */}
           {attachedFile && (
@@ -415,7 +463,7 @@ export default function ChatArea({
               </button>
             )}
           </div>
-          <p className="text-center text-xs text-gray-700 mt-2 font-cosmic tracking-wider">
+          <p className="text-center text-[10px] md:text-xs text-gray-700 mt-2 font-cosmic tracking-wider">
             {webSearchEnabled
               ? "WEB SEARCH ACTIVATED - FETCHING REAL-TIME DATA"
               : "ABYSS HAS CROSS-CHAT MEMORY AND CAN PROCESS FILES"}
