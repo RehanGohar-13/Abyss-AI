@@ -15,10 +15,10 @@ function App() {
   const [activeCategory, setActiveCategory] = useState("general");
   const [attachedFile, setAttachedFile] = useState(null);
   const [selectedModel, setSelectedModel] = useState("llama-3.3-70b-versatile");
+  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const abortControllerRef = useRef(null);
   const fileInputRef = useRef(null);
 
-  // Ref to hold latest conversations so stream callback doesn't get stale state
   const conversationsRef = useRef(conversations);
   useEffect(() => {
     conversationsRef.current = conversations;
@@ -36,7 +36,6 @@ function App() {
       let history = [];
       let isNewChat = false;
 
-      // Create new conversation if none active
       if (!currentId) {
         isNewChat = true;
         currentId = Date.now().toString();
@@ -60,12 +59,11 @@ function App() {
 
       setActiveId(currentId);
 
-      // Include file name in user message if attached
       const displayText = attachedFile
         ? `📎 ${attachedFile.name}\n${text}`
         : text;
       const userMsg = { role: "user", content: displayText };
-      const aiMsg = { role: "assistant", content: "" };
+      const aiMsg = { role: "assistant", content: "", sources: null };
 
       setConversations((prev) => {
         const updated = prev.map((c) =>
@@ -73,7 +71,7 @@ function App() {
             ? { ...c, messages: [...c.messages, userMsg, aiMsg] }
             : c,
         );
-        conversationsRef.current = updated; // Keep ref in sync immediately
+        conversationsRef.current = updated;
         return updated;
       });
 
@@ -81,12 +79,11 @@ function App() {
       const controller = new AbortController();
       abortControllerRef.current = controller;
       const currentFile = attachedFile;
-      setAttachedFile(null); // Clear file from UI immediately
+      setAttachedFile(null);
 
-      // Build Global Context (Cross-chat memory)
       const globalContext = conversationsRef.current
         .filter((c) => c.id !== currentId)
-        .slice(0, 5) // Limit to 5 most recent chats to save tokens
+        .slice(0, 5)
         .map((c) => ({
           title: c.title,
           last_msg:
@@ -95,7 +92,6 @@ function App() {
 
       try {
         if (currentFile) {
-          // Non-streaming file upload route
           await uploadFile(
             currentFile,
             text,
@@ -117,7 +113,6 @@ function App() {
             controller.signal,
           );
         } else {
-          // Standard streaming chat
           await streamChat(
             text,
             history,
@@ -126,9 +121,26 @@ function App() {
                 const updated = prev.map((c) => {
                   if (c.id !== currentId) return c;
                   const msgs = [...c.messages];
+                  let content = msgs[msgs.length - 1].content + chunk;
+                  let sources = msgs[msgs.length - 1].sources;
+
+                  // Intercept sources JSON
+                  if (content.includes("[SOURCES_JSON]")) {
+                    const match = content.match(
+                      /\[SOURCES_JSON\](.*?)\[\/SOURCES_JSON\]/s,
+                    );
+                    if (match) {
+                      try {
+                        sources = JSON.parse(match[1]);
+                        content = content.replace(match[0], "").trim();
+                      } catch (e) {}
+                    }
+                  }
+
                   msgs[msgs.length - 1] = {
                     ...msgs[msgs.length - 1],
-                    content: msgs[msgs.length - 1].content + chunk,
+                    content,
+                    sources,
                   };
                   return { ...c, messages: msgs };
                 });
@@ -139,10 +151,10 @@ function App() {
             controller.signal,
             selectedModel,
             globalContext,
+            webSearchEnabled,
           );
         }
 
-        // Generate AI Title if it's a new chat
         if (isNewChat) {
           const newTitle = await generateTitle(text);
           setConversations((prev) =>
@@ -160,7 +172,7 @@ function App() {
         abortControllerRef.current = null;
       }
     },
-    [activeId, attachedFile, selectedModel],
+    [activeId, attachedFile, selectedModel, webSearchEnabled],
   );
 
   const handleStop = () => {
@@ -208,6 +220,8 @@ function App() {
             fileInputRef={fileInputRef}
             selectedModel={selectedModel}
             setSelectedModel={setSelectedModel}
+            webSearchEnabled={webSearchEnabled}
+            setWebSearchEnabled={setWebSearchEnabled}
           />
         </main>
       </div>

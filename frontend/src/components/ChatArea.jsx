@@ -12,9 +12,20 @@ import {
   X,
   ChevronDown,
   Check,
+  Globe,
+  ExternalLink,
 } from "lucide-react";
 
 marked.setOptions({ breaks: true });
+
+// Helper to get domain name from URL
+const getDomain = (url) => {
+  try {
+    return new URL(url).hostname.replace("www.", "");
+  } catch {
+    return url;
+  }
+};
 
 export default function ChatArea({
   messages,
@@ -27,9 +38,12 @@ export default function ChatArea({
   fileInputRef,
   selectedModel,
   setSelectedModel,
+  webSearchEnabled,
+  setWebSearchEnabled,
 }) {
   const [input, setInput] = useState("");
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
+  const [panelSources, setPanelSources] = useState(null); // Lifted state for the full window panel
   const scrollRef = useRef(null);
   const chatContainerRef = useRef(null);
 
@@ -53,23 +67,19 @@ export default function ChatArea({
     }
   }, [messages]);
 
-  // Syntax Highlighting & Copy Button Injection
   useEffect(() => {
     const container = chatContainerRef.current;
     if (!container) return;
 
     const codeBlocks = container.querySelectorAll("pre code");
     codeBlocks.forEach((block) => {
-      // Highlight
       if (!block.dataset.highlighted) {
         hljs.highlightElement(block);
         block.dataset.highlighted = "yes";
       }
 
       const pre = block.parentElement;
-      // Add header if not already added
       if (!pre.querySelector(".code-header")) {
-        // Detect language
         const langClass = block.className.match(/language-(\w+)/);
         const lang = langClass ? langClass[1] : "code";
 
@@ -134,7 +144,7 @@ export default function ChatArea({
   const activeModel = models.find((m) => m.id === selectedModel) || models[0];
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-transparent">
+    <div className="flex-1 flex flex-col h-full bg-transparent relative">
       {/* Header */}
       <div className="py-3 px-6 border-b border-purple-900/30 flex items-center justify-between glass relative z-20">
         <h1 className="text-lg font-cosmic tracking-[0.2em] text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-indigo-400">
@@ -157,13 +167,10 @@ export default function ChatArea({
 
             {isModelMenuOpen && (
               <>
-                {/* Invisible backdrop to close menu when clicking outside */}
                 <div
                   className="fixed inset-0 z-10"
                   onClick={() => setIsModelMenuOpen(false)}
                 ></div>
-
-                {/* Dropdown Menu */}
                 <div className="absolute right-0 mt-2 w-64 glass rounded-xl p-2 z-20 shadow-2xl border-purple-900/50 origin-top-right animate-[fadeIn_0.1s_ease-out]">
                   {models.map((m) => (
                     <button
@@ -210,7 +217,6 @@ export default function ChatArea({
         <div ref={chatContainerRef} className="h-full">
           {messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center p-8 relative">
-              {/* Cosmic Ring Decoration */}
               <div className="absolute w-96 h-96 rounded-full border border-purple-500/20 animate-pulse"></div>
               <div className="absolute w-64 h-64 rounded-full border border-indigo-500/20 animate-ping [animation-duration:4s]"></div>
 
@@ -269,29 +275,65 @@ export default function ChatArea({
             </div>
           ) : (
             <div className="max-w-3xl mx-auto py-6 px-6 space-y-6">
-              {messages.map((msg, i) => (
-                <div
-                  key={i}
-                  className={`${msg.role === "user" ? "text-right" : "text-left"}`}
-                >
+              {messages.map((msg, i) => {
+                const visibleContent = msg.content.split("[SOURCES_JSON]")[0];
+
+                return (
                   <div
-                    className={`inline-block max-w-full ${msg.role === "user" ? "bg-purple-900/30 border border-purple-700/30 rounded-2xl rounded-tr-sm py-2 px-4" : "w-full glass rounded-2xl rounded-tl-sm py-3 px-4"}`}
+                    key={i}
+                    className={`${msg.role === "user" ? "text-right" : "text-left"}`}
                   >
-                    {msg.role === "user" ? (
-                      <p className="text-gray-200 text-sm whitespace-pre-wrap text-left">
-                        {msg.content}
-                      </p>
-                    ) : (
-                      <div
-                        className="prose text-gray-300 text-sm text-left"
-                        dangerouslySetInnerHTML={{
-                          __html: marked.parse(msg.content || "..."),
-                        }}
-                      />
-                    )}
+                    <div
+                      className={`inline-block max-w-full ${msg.role === "user" ? "bg-purple-900/30 border border-purple-700/30 rounded-2xl rounded-tr-sm py-2 px-4" : "w-full glass rounded-2xl rounded-tl-sm py-3 px-4"}`}
+                    >
+                      {msg.role === "user" ? (
+                        <p className="text-gray-200 text-sm whitespace-pre-wrap text-left">
+                          {msg.content}
+                        </p>
+                      ) : (
+                        <>
+                          <div
+                            className="prose text-gray-300 text-sm text-left"
+                            dangerouslySetInnerHTML={{
+                              __html: marked.parse(visibleContent || "..."),
+                            }}
+                          />
+                          {msg.sources && msg.sources.length > 0 && (
+                            <div className="mt-4 pt-3 border-t border-purple-900/30">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                {msg.sources.slice(0, 4).map((src, i) => (
+                                  <a
+                                    key={i}
+                                    href={src.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="w-8 h-8 rounded-full bg-black/50 border border-purple-900/30 flex items-center justify-center hover:border-purple-500 hover:scale-110 transition-all relative group"
+                                    title={getDomain(src.url)}
+                                  >
+                                    <img
+                                      src={`https://www.google.com/s2/favicons?domain=${getDomain(src.url)}&sz=32`}
+                                      className="w-4 h-4"
+                                      alt=""
+                                    />
+                                  </a>
+                                ))}
+                                {msg.sources.length > 4 && (
+                                  <button
+                                    onClick={() => setPanelSources(msg.sources)}
+                                    className="h-8 px-3 rounded-full bg-black/50 border border-purple-900/30 flex items-center justify-center text-[10px] text-purple-400 hover:border-purple-500 hover:scale-105 transition-all font-cosmic tracking-wider"
+                                  >
+                                    +{msg.sources.length - 4}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -334,6 +376,16 @@ export default function ChatArea({
               <Paperclip size={18} />
             </button>
 
+            {/* Web Search Toggle */}
+            <button
+              type="button"
+              onClick={() => setWebSearchEnabled(!webSearchEnabled)}
+              className={`p-2 transition-colors rounded-xl ${webSearchEnabled ? "text-purple-400 bg-purple-900/30 glow-accent" : "text-gray-500 hover:text-purple-400 hover:bg-purple-900/20"}`}
+              title="Search the Web"
+            >
+              <Globe size={18} />
+            </button>
+
             <input
               type="text"
               value={input}
@@ -364,10 +416,69 @@ export default function ChatArea({
             )}
           </div>
           <p className="text-center text-xs text-gray-700 mt-2 font-cosmic tracking-wider">
-            ABYSS HAS CROSS-CHAT MEMORY AND CAN PROCESS FILES
+            {webSearchEnabled
+              ? "WEB SEARCH ACTIVATED - FETCHING REAL-TIME DATA"
+              : "ABYSS HAS CROSS-CHAT MEMORY AND CAN PROCESS FILES"}
           </p>
         </form>
       </div>
+
+      {/* FULL WINDOW SOURCES PANEL OVERLAY */}
+      {panelSources && (
+        <div
+          className="fixed inset-0 z-40 flex justify-end bg-black/60 backdrop-blur-sm animate-[fadeIn_0.1s_ease-out]"
+          onClick={() => setPanelSources(null)}
+        >
+          <div
+            className="w-full max-w-md h-full glass border-l border-purple-900/50 p-6 overflow-y-auto shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center mb-8">
+              <h3 className="font-cosmic text-purple-300 tracking-widest text-lg">
+                ALL SOURCES
+              </h3>
+              <button
+                onClick={() => setPanelSources(null)}
+                className="text-gray-400 hover:text-white p-2 hover:bg-purple-900/30 rounded-full transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="space-y-4">
+              {panelSources.map((src, i) => (
+                <a
+                  key={i}
+                  href={src.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block p-4 rounded-xl bg-black/40 hover:bg-purple-900/20 border border-purple-900/40 transition-colors group"
+                >
+                  <div className="flex items-center gap-3 mb-2">
+                    <img
+                      src={`https://www.google.com/s2/favicons?domain=${getDomain(src.url)}&sz=32`}
+                      className="w-5 h-5 rounded-full"
+                      alt=""
+                    />
+                    <span className="text-sm text-gray-200 font-medium truncate group-hover:text-purple-300 flex-1">
+                      {src.title}
+                    </span>
+                    <ExternalLink
+                      size={14}
+                      className="text-gray-600 group-hover:text-purple-400 shrink-0"
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500 mb-3 line-clamp-3">
+                    {src.snippet}
+                  </p>
+                  <span className="text-[11px] text-purple-400/60 truncate block font-mono">
+                    {src.url}
+                  </span>
+                </a>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

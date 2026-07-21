@@ -5,6 +5,7 @@ export async function streamChat(
   signal,
   model,
   globalContext,
+  useWebSearch,
 ) {
   const response = await fetch("http://localhost:5000/chat", {
     method: "POST",
@@ -14,8 +15,9 @@ export async function streamChat(
       history,
       model,
       global_context: globalContext,
+      use_web_search: useWebSearch,
     }),
-    signal, // Allows us to cancel the stream with a Stop button
+    signal,
   });
 
   if (!response.ok) throw new Error("Network response was not ok");
@@ -27,7 +29,7 @@ export async function streamChat(
     const { done, value } = await reader.read();
     if (done) break;
     const chunk = decoder.decode(value, { stream: true });
-    onChunk(chunk); // Send chunk to UI
+    onChunk(chunk);
   }
 }
 
@@ -80,6 +82,6 @@ export async function generateTitle(message) {
     const data = await response.json();
     return data.title;
   } catch (err) {
-    return message.slice(0, 30); // Fallback
+    return message.slice(0, 30);
   }
 }
