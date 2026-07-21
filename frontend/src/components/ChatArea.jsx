@@ -15,6 +15,9 @@ import {
   Globe,
   ExternalLink,
   Menu,
+  RefreshCw,
+  Pencil,
+  Copy,
 } from "lucide-react";
 
 marked.setOptions({ breaks: true });
@@ -42,11 +45,23 @@ export default function ChatArea({
   webSearchEnabled,
   setWebSearchEnabled,
   toggleSidebar,
+  onRegenerate,
+  onEditMessage,
 }) {
   const [input, setInput] = useState("");
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
   const [panelSources, setPanelSources] = useState(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [editingMsgIndex, setEditingMsgIndex] = useState(null);
+  const [editText, setEditText] = useState("");
+  const [contextMenu, setContextMenu] = useState({
+    visible: false,
+    x: 0,
+    y: 0,
+    msg: null,
+    index: -1,
+  });
+
   const scrollRef = useRef(null);
   const chatContainerRef = useRef(null);
 
@@ -73,7 +88,6 @@ export default function ChatArea({
   const handleScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
-    // Show button if user is scrolled up more than 300px from the bottom
     if (el.scrollHeight - el.scrollTop - el.clientHeight > 300) {
       setShowScrollButton(true);
     } else {
@@ -88,6 +102,25 @@ export default function ChatArea({
         behavior: "smooth",
       });
     }
+  };
+
+  // Close context menu on any click or scroll
+  useEffect(() => {
+    const closeMenu = () =>
+      setContextMenu((prev) => ({ ...prev, visible: false }));
+    if (contextMenu.visible) {
+      window.addEventListener("click", closeMenu);
+      window.addEventListener("scroll", closeMenu, true);
+    }
+    return () => {
+      window.removeEventListener("click", closeMenu);
+      window.removeEventListener("scroll", closeMenu, true);
+    };
+  }, [contextMenu.visible]);
+
+  const handleContextMenu = (e, msg, index) => {
+    e.preventDefault();
+    setContextMenu({ visible: true, x: e.clientX, y: e.clientY, msg, index });
   };
 
   useEffect(() => {
@@ -139,6 +172,7 @@ export default function ChatArea({
     if ((!input.trim() && !attachedFile) || isStreaming) return;
     onSend(input || "Analyze this file.");
     setInput("");
+    setEditingMsgIndex(null);
   };
 
   const handleSuggestion = (text) => {
@@ -156,6 +190,18 @@ export default function ChatArea({
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  const startEditing = (index, content) => {
+    setEditingMsgIndex(index);
+    setEditText(content);
+  };
+
+  const saveEdit = () => {
+    if (!editText.trim()) return;
+    onEditMessage(editingMsgIndex, editText);
+    setEditingMsgIndex(null);
+    setEditText("");
+  };
+
   const getCategoryIcon = () => {
     if (category === "coding")
       return <Code2 size={12} className="text-emerald-400" />;
@@ -171,7 +217,6 @@ export default function ChatArea({
       {/* Header */}
       <div className="py-3 px-4 md:px-6 border-b border-purple-900/30 flex items-center justify-between glass relative z-20">
         <div className="flex items-center gap-3">
-          {/* Mobile Hamburger Menu */}
           <button
             className="md:hidden p-2 text-gray-400 hover:text-white transition-colors"
             onClick={toggleSidebar}
@@ -184,7 +229,6 @@ export default function ChatArea({
         </div>
 
         <div className="flex items-center gap-2 md:gap-3">
-          {/* Custom Model Selector */}
           <div className="relative">
             <button
               onClick={() => setIsModelMenuOpen(!isModelMenuOpen)}
@@ -235,7 +279,6 @@ export default function ChatArea({
             )}
           </div>
 
-          {/* Category Badge */}
           <div className="hidden md:flex items-center gap-2 text-xs text-gray-400 capitalize glass px-3 py-1.5 rounded-full">
             {getCategoryIcon()}{" "}
             <span className="font-cosmic tracking-wider">
@@ -314,6 +357,7 @@ export default function ChatArea({
             <div className="max-w-3xl mx-auto py-6 px-4 md:px-6 space-y-6">
               {messages.map((msg, i) => {
                 const visibleContent = msg.content.split("[SOURCES_JSON]")[0];
+                const isLastMessage = i === messages.length - 1;
 
                 return (
                   <div
@@ -321,12 +365,38 @@ export default function ChatArea({
                     className={`${msg.role === "user" ? "text-right" : "text-left"}`}
                   >
                     <div
-                      className={`inline-block max-w-full ${msg.role === "user" ? "bg-purple-900/30 border border-purple-700/30 rounded-2xl rounded-tr-sm py-2 px-4" : "w-full glass rounded-2xl rounded-tl-sm py-3 px-4"}`}
+                      onContextMenu={(e) => handleContextMenu(e, msg, i)}
+                      className={`group relative inline-block max-w-full ${msg.role === "user" ? "bg-purple-900/30 border border-purple-700/30 rounded-2xl rounded-tr-sm py-2 px-4" : "w-full glass rounded-2xl rounded-tl-sm py-3 px-4"}`}
                     >
                       {msg.role === "user" ? (
-                        <p className="text-gray-200 text-sm whitespace-pre-wrap text-left">
-                          {msg.content}
-                        </p>
+                        editingMsgIndex === i ? (
+                          <div className="flex flex-col gap-2 min-w-[200px] text-left">
+                            <textarea
+                              className="bg-black/40 border border-purple-700/50 rounded p-2 text-sm text-gray-200 focus:outline-none focus:border-purple-500 w-full"
+                              value={editText}
+                              onChange={(e) => setEditText(e.target.value)}
+                              rows={3}
+                            />
+                            <div className="flex justify-end gap-2">
+                              <button
+                                onClick={() => setEditingMsgIndex(null)}
+                                className="text-xs text-gray-400 hover:text-white px-2 py-1 rounded"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                onClick={saveEdit}
+                                className="text-xs bg-purple-600 hover:bg-purple-500 text-white px-3 py-1 rounded flex items-center gap-1"
+                              >
+                                <Check size={12} /> Send
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-gray-200 text-sm whitespace-pre-wrap text-left">
+                            {msg.content}
+                          </p>
+                        )
                       ) : (
                         <>
                           <div
@@ -368,6 +438,21 @@ export default function ChatArea({
                         </>
                       )}
                     </div>
+
+                    {/* Regenerate Button under last AI Message */}
+                    {msg.role === "assistant" &&
+                      isLastMessage &&
+                      !isStreaming &&
+                      visibleContent.trim() !== "" && (
+                        <div className="flex justify-start mt-2">
+                          <button
+                            onClick={() => onRegenerate()}
+                            className="flex items-center gap-2 text-xs text-gray-400 hover:text-purple-400 transition-colors font-cosmic tracking-wider"
+                          >
+                            <RefreshCw size={12} /> Regenerate Response
+                          </button>
+                        </div>
+                      )}
                   </div>
                 );
               })}
@@ -376,7 +461,7 @@ export default function ChatArea({
         </div>
       </div>
 
-      {/* Scroll to Bottom Button - Moved outside scroll container with absolute positioning */}
+      {/* Scroll to Bottom Button */}
       {showScrollButton && (
         <button
           onClick={scrollToBottom}
@@ -390,7 +475,6 @@ export default function ChatArea({
       {/* Input Area */}
       <div className="p-3 md:p-4 bg-gradient-to-t from-black via-black/80 to-transparent">
         <form onSubmit={handleSubmit} className="max-w-3xl mx-auto">
-          {/* File Preview Chip */}
           {attachedFile && (
             <div className="flex items-center gap-2 mb-2 glass rounded-xl px-3 py-2 w-fit">
               <Paperclip size={14} className="text-purple-400" />
@@ -424,7 +508,6 @@ export default function ChatArea({
               <Paperclip size={18} />
             </button>
 
-            {/* Web Search Toggle */}
             <button
               type="button"
               onClick={() => setWebSearchEnabled(!webSearchEnabled)}
@@ -470,6 +553,48 @@ export default function ChatArea({
           </p>
         </form>
       </div>
+
+      {/* CUSTOM RIGHT-CLICK CONTEXT MENU */}
+      {contextMenu.visible && (
+        <div
+          className="fixed z-50 w-44 glass rounded-lg p-1.5 shadow-2xl border border-purple-900/50 animate-[fadeIn_0.1s_ease-out]"
+          style={{ top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {contextMenu.msg?.role === "user" && (
+            <button
+              onClick={() => {
+                startEditing(contextMenu.index, contextMenu.msg.content);
+                setContextMenu((prev) => ({ ...prev, visible: false }));
+              }}
+              className="w-full flex items-center gap-2 text-left text-xs text-gray-300 hover:bg-purple-900/40 rounded-md px-2 py-1.5 transition-colors font-cosmic tracking-wider"
+            >
+              <Pencil size={12} /> EDIT MESSAGE
+            </button>
+          )}
+          <button
+            onClick={() => {
+              onRegenerate(contextMenu.index);
+              setContextMenu((prev) => ({ ...prev, visible: false }));
+            }}
+            disabled={isStreaming}
+            className="w-full flex items-center gap-2 text-left text-xs text-gray-300 hover:bg-purple-900/40 rounded-md px-2 py-1.5 transition-colors font-cosmic tracking-wider disabled:opacity-30"
+          >
+            <RefreshCw size={12} /> REGENERATE
+          </button>
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(
+                contextMenu.msg.content.split("[SOURCES_JSON]")[0],
+              );
+              setContextMenu((prev) => ({ ...prev, visible: false }));
+            }}
+            className="w-full flex items-center gap-2 text-left text-xs text-gray-300 hover:bg-purple-900/40 rounded-md px-2 py-1.5 transition-colors font-cosmic tracking-wider"
+          >
+            <Copy size={12} /> COPY TEXT
+          </button>
+        </div>
+      )}
 
       {/* FULL WINDOW SOURCES PANEL OVERLAY */}
       {panelSources && (
