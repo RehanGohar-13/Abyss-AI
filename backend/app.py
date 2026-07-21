@@ -15,6 +15,7 @@ CORS(app)
 API_KEY = os.getenv("GROQ_API_KEY")
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
 DEFAULT_MODEL = "llama-3.3-70b-versatile"
+FAST_MODEL = "llama-3.1-8b-instant"
 
 # Upgraded prompts to be less generic and more capable
 SYSTEM_PROMPTS = {
@@ -100,12 +101,27 @@ def chat():
         mimetype='text/event-stream'
     )
 
+@app.route("/generate-title", methods=["POST"])
+def generate_title():
+    d = request.json
+    user_msg = d.get("message", "")
+    
+    prompt = f"Create a very short, 2-4 word title for a conversation that starts with this user message. Do not use quotes or punctuation. Message: '{user_msg}'"
+    
+    try:
+        r = requests.post(API_URL, headers={"Authorization": f"Bearer {API_KEY}"}, 
+                          json={"model": FAST_MODEL, "messages": [{"role":"user","content":prompt}], "temperature": 0.5})
+        r.raise_for_status()
+        title = r.json()["choices"][0]["message"]["content"].strip().replace('"', '')
+        return jsonify({"title": title})
+    except Exception as e:
+        return jsonify({"title": user_msg[:30]}), 200 # Fallback to truncated message
+
 @app.route("/upload", methods=["POST"])
 def upload():
     d = request.json
     try:
         if d["type"] == "pdf":
-            # Safely decode base64
             base64_str = d["content"].split(",")[1] if "," in d["content"] else d["content"]
             pdf_bytes = base64.b64decode(base64_str)
             text = "\n".join(p.extract_text() for p in PyPDF2.PdfReader(io.BytesIO(pdf_bytes)).pages)

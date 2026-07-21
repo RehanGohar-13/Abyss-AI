@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { marked } from "marked";
+import hljs from "highlight.js";
 import {
   ArrowUp,
   Square,
@@ -10,6 +11,7 @@ import {
   Paperclip,
   X,
   ChevronDown,
+  Check,
 } from "lucide-react";
 
 marked.setOptions({ breaks: true });
@@ -27,13 +29,77 @@ export default function ChatArea({
   setSelectedModel,
 }) {
   const [input, setInput] = useState("");
+  const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
   const scrollRef = useRef(null);
+  const chatContainerRef = useRef(null);
+
+  const models = [
+    {
+      id: "llama-3.3-70b-versatile",
+      name: "LLAMA 3.3 70B",
+      desc: "Default - Most capable",
+    },
+    {
+      id: "llama-3.1-8b-instant",
+      name: "LLAMA 3.1 8B",
+      desc: "Ultra-fast responses",
+    },
+    { id: "llama3-70b-8192", name: "LLAMA 3 70B", desc: "Stable legacy model" },
+  ];
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
+
+  // Syntax Highlighting & Copy Button Injection
+  useEffect(() => {
+    const container = chatContainerRef.current;
+    if (!container) return;
+
+    const codeBlocks = container.querySelectorAll("pre code");
+    codeBlocks.forEach((block) => {
+      // Highlight
+      if (!block.dataset.highlighted) {
+        hljs.highlightElement(block);
+        block.dataset.highlighted = "yes";
+      }
+
+      const pre = block.parentElement;
+      // Add header if not already added
+      if (!pre.querySelector(".code-header")) {
+        // Detect language
+        const langClass = block.className.match(/language-(\w+)/);
+        const lang = langClass ? langClass[1] : "code";
+
+        const header = document.createElement("div");
+        header.className = "code-header";
+
+        const langLabel = document.createElement("span");
+        langLabel.textContent = lang.toUpperCase();
+
+        const copyBtn = document.createElement("button");
+        copyBtn.className = "copy-btn";
+        copyBtn.innerHTML =
+          '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg> COPY';
+
+        copyBtn.onclick = () => {
+          navigator.clipboard.writeText(block.innerText);
+          copyBtn.innerHTML =
+            '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> COPIED';
+          setTimeout(() => {
+            copyBtn.innerHTML =
+              '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg> COPY';
+          }, 2000);
+        };
+
+        header.appendChild(langLabel);
+        header.appendChild(copyBtn);
+        pre.insertBefore(header, block);
+      }
+    });
+  }, [messages, isStreaming]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -42,7 +108,6 @@ export default function ChatArea({
     setInput("");
   };
 
-  // Allow clicking suggestions even while typing, but not while streaming
   const handleSuggestion = (text) => {
     if (isStreaming) return;
     onSend(text);
@@ -66,34 +131,72 @@ export default function ChatArea({
     return <FileText size={12} className="text-blue-400" />;
   };
 
+  const activeModel = models.find((m) => m.id === selectedModel) || models[0];
+
   return (
     <div className="flex-1 flex flex-col h-full bg-transparent">
       {/* Header */}
-      <div className="py-3 px-6 border-b border-purple-900/30 flex items-center justify-between glass">
+      <div className="py-3 px-6 border-b border-purple-900/30 flex items-center justify-between glass relative z-20">
         <h1 className="text-lg font-cosmic tracking-[0.2em] text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-indigo-400">
           ABYSS AI
         </h1>
 
         <div className="flex items-center gap-3">
-          {/* Model Selector */}
-          <div className="relative flex items-center">
-            <select
-              value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value)}
-              className="appearance-none bg-black/40 border border-purple-900/30 rounded-full pl-3 pr-8 py-1 text-xs text-gray-300 focus:outline-none focus:border-purple-500 transition-colors cursor-pointer font-cosmic tracking-wider"
+          {/* Custom Model Selector */}
+          <div className="relative">
+            <button
+              onClick={() => setIsModelMenuOpen(!isModelMenuOpen)}
+              className="flex items-center gap-2 text-xs text-gray-300 glass px-3 py-1.5 rounded-full hover:border-purple-500 transition-colors font-cosmic tracking-wider"
             >
-              <option value="llama-3.3-70b-versatile">LLAMA 3.3 70B</option>
-              <option value="llama-3.1-8b-instant">LLAMA 3.1 8B</option>
-              <option value="gemma2-9b-it">GEMMA 2 9B</option>
-            </select>
-            <ChevronDown
-              size={14}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-purple-400 pointer-events-none"
-            />
+              <span>{activeModel.name}</span>
+              <ChevronDown
+                size={14}
+                className={`text-purple-400 transition-transform ${isModelMenuOpen ? "rotate-180" : ""}`}
+              />
+            </button>
+
+            {isModelMenuOpen && (
+              <>
+                {/* Invisible backdrop to close menu when clicking outside */}
+                <div
+                  className="fixed inset-0 z-10"
+                  onClick={() => setIsModelMenuOpen(false)}
+                ></div>
+
+                {/* Dropdown Menu */}
+                <div className="absolute right-0 mt-2 w-64 glass rounded-xl p-2 z-20 shadow-2xl border-purple-900/50 origin-top-right animate-[fadeIn_0.1s_ease-out]">
+                  {models.map((m) => (
+                    <button
+                      key={m.id}
+                      onClick={() => {
+                        setSelectedModel(m.id);
+                        setIsModelMenuOpen(false);
+                      }}
+                      className="w-full flex items-start gap-3 p-2.5 rounded-lg hover:bg-purple-900/40 transition-colors text-left"
+                    >
+                      <div className="flex-1">
+                        <p className="text-xs font-cosmic text-gray-200 tracking-wider">
+                          {m.name}
+                        </p>
+                        <p className="text-[10px] text-gray-500 mt-0.5">
+                          {m.desc}
+                        </p>
+                      </div>
+                      {selectedModel === m.id && (
+                        <Check
+                          size={14}
+                          className="text-purple-400 mt-1 shrink-0"
+                        />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
 
           {/* Category Badge */}
-          <div className="flex items-center gap-2 text-xs text-gray-400 capitalize glass px-3 py-1 rounded-full">
+          <div className="flex items-center gap-2 text-xs text-gray-400 capitalize glass px-3 py-1.5 rounded-full">
             {getCategoryIcon()}{" "}
             <span className="font-cosmic tracking-wider">
               {category} module
@@ -104,92 +207,94 @@ export default function ChatArea({
 
       {/* Messages or Empty State */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
-        {messages.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center p-8 relative">
-            {/* Cosmic Ring Decoration */}
-            <div className="absolute w-96 h-96 rounded-full border border-purple-500/20 animate-pulse"></div>
-            <div className="absolute w-64 h-64 rounded-full border border-indigo-500/20 animate-ping [animation-duration:4s]"></div>
+        <div ref={chatContainerRef} className="h-full">
+          {messages.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-center p-8 relative">
+              {/* Cosmic Ring Decoration */}
+              <div className="absolute w-96 h-96 rounded-full border border-purple-500/20 animate-pulse"></div>
+              <div className="absolute w-64 h-64 rounded-full border border-indigo-500/20 animate-ping [animation-duration:4s]"></div>
 
-            <div className="relative z-10 mb-8">
-              <Orbit size={64} className="text-purple-500 mx-auto" />
-            </div>
-
-            <h2 className="text-4xl font-cosmic font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-indigo-400 to-blue-400 mb-3 tracking-wider">
-              ENTER THE ABYSS
-            </h2>
-            <p className="text-gray-400 mb-10 max-w-md font-light">
-              Initializing deep space comms. What knowledge do you seek from the
-              void?
-            </p>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl w-full">
-              <div
-                className="glass rounded-xl p-4 text-left hover:border-purple-500 transition-all cursor-pointer group"
-                onClick={() =>
-                  handleSuggestion(
-                    "Write a Python script to reverse a linked list.",
-                  )
-                }
-              >
-                <Code2
-                  className="text-emerald-400 mb-2 group-hover:scale-110 transition-transform"
-                  size={24}
-                />
-                <h3 className="text-sm font-medium text-gray-200 font-cosmic">
-                  DATA STRUCTURES
-                </h3>
-                <p className="text-xs text-gray-500 mt-1">
-                  Reverse a linked list in Python
-                </p>
+              <div className="relative z-10 mb-8">
+                <Orbit size={64} className="text-purple-500 mx-auto" />
               </div>
-              <div
-                className="glass rounded-xl p-4 text-left hover:border-purple-500 transition-all cursor-pointer group"
-                onClick={() =>
-                  handleSuggestion(
-                    "Explain the math behind RSA encryption and why it works.",
-                  )
-                }
-              >
-                <Brain
-                  className="text-amber-400 mb-2 group-hover:scale-110 transition-transform"
-                  size={24}
-                />
-                <h3 className="text-sm font-medium text-gray-200 font-cosmic">
-                  DEEP REASONING
-                </h3>
-                <p className="text-xs text-gray-500 mt-1">
-                  The mathematics of RSA encryption
-                </p>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="max-w-3xl mx-auto py-6 px-6 space-y-6">
-            {messages.map((msg, i) => (
-              <div
-                key={i}
-                className={`${msg.role === "user" ? "text-right" : "text-left"}`}
-              >
+
+              <h2 className="text-4xl font-cosmic font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-indigo-400 to-blue-400 mb-3 tracking-wider">
+                ENTER THE ABYSS
+              </h2>
+              <p className="text-gray-400 mb-10 max-w-md font-light">
+                Initializing deep space comms. What knowledge do you seek from
+                the void?
+              </p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl w-full">
                 <div
-                  className={`inline-block max-w-full ${msg.role === "user" ? "bg-purple-900/30 border border-purple-700/30 rounded-2xl rounded-tr-sm py-2 px-4" : "w-full glass rounded-2xl rounded-tl-sm py-3 px-4"}`}
+                  className="glass rounded-xl p-4 text-left hover:border-purple-500 transition-all cursor-pointer group"
+                  onClick={() =>
+                    handleSuggestion(
+                      "Write a Python script to reverse a linked list.",
+                    )
+                  }
                 >
-                  {msg.role === "user" ? (
-                    <p className="text-gray-200 text-sm whitespace-pre-wrap text-left">
-                      {msg.content}
-                    </p>
-                  ) : (
-                    <div
-                      className="prose text-gray-300 text-sm text-left"
-                      dangerouslySetInnerHTML={{
-                        __html: marked.parse(msg.content || "..."),
-                      }}
-                    />
-                  )}
+                  <Code2
+                    className="text-emerald-400 mb-2 group-hover:scale-110 transition-transform"
+                    size={24}
+                  />
+                  <h3 className="text-sm font-medium text-gray-200 font-cosmic">
+                    DATA STRUCTURES
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Reverse a linked list in Python
+                  </p>
+                </div>
+                <div
+                  className="glass rounded-xl p-4 text-left hover:border-purple-500 transition-all cursor-pointer group"
+                  onClick={() =>
+                    handleSuggestion(
+                      "Explain the math behind RSA encryption and why it works.",
+                    )
+                  }
+                >
+                  <Brain
+                    className="text-amber-400 mb-2 group-hover:scale-110 transition-transform"
+                    size={24}
+                  />
+                  <h3 className="text-sm font-medium text-gray-200 font-cosmic">
+                    DEEP REASONING
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-1">
+                    The mathematics of RSA encryption
+                  </p>
                 </div>
               </div>
-            ))}
-          </div>
-        )}
+            </div>
+          ) : (
+            <div className="max-w-3xl mx-auto py-6 px-6 space-y-6">
+              {messages.map((msg, i) => (
+                <div
+                  key={i}
+                  className={`${msg.role === "user" ? "text-right" : "text-left"}`}
+                >
+                  <div
+                    className={`inline-block max-w-full ${msg.role === "user" ? "bg-purple-900/30 border border-purple-700/30 rounded-2xl rounded-tr-sm py-2 px-4" : "w-full glass rounded-2xl rounded-tl-sm py-3 px-4"}`}
+                  >
+                    {msg.role === "user" ? (
+                      <p className="text-gray-200 text-sm whitespace-pre-wrap text-left">
+                        {msg.content}
+                      </p>
+                    ) : (
+                      <div
+                        className="prose text-gray-300 text-sm text-left"
+                        dangerouslySetInnerHTML={{
+                          __html: marked.parse(msg.content || "..."),
+                        }}
+                      />
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Input Area */}

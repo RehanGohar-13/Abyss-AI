@@ -44,8 +44,6 @@ export async function uploadFile(file, question, onChunk, signal) {
       };
 
       try {
-        // Note: The backend /upload route is currently non-streaming.
-        // We'll wait for the full response, then pass it to onChunk.
         const response = await fetch("http://localhost:5000/upload", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -70,4 +68,18 @@ export async function uploadFile(file, question, onChunk, signal) {
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+
+export async function generateTitle(message) {
+  try {
+    const response = await fetch("http://localhost:5000/generate-title", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message }),
+    });
+    const data = await response.json();
+    return data.title;
+  } catch (err) {
+    return message.slice(0, 30); // Fallback
+  }
 }

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import Sidebar from "./components/Sidebar";
 import ChatArea from "./components/ChatArea";
 import Starfield from "./components/Starfield";
-import { streamChat, uploadFile } from "./utils/api";
+import { streamChat, uploadFile, generateTitle } from "./utils/api";
 
 function App() {
   const [conversations, setConversations] = useState(() => {
@@ -34,9 +34,11 @@ function App() {
     async (text) => {
       let currentId = activeId;
       let history = [];
+      let isNewChat = false;
 
       // Create new conversation if none active
       if (!currentId) {
+        isNewChat = true;
         currentId = Date.now().toString();
         const newConv = {
           id: currentId,
@@ -137,6 +139,16 @@ function App() {
             controller.signal,
             selectedModel,
             globalContext,
+          );
+        }
+
+        // Generate AI Title if it's a new chat
+        if (isNewChat) {
+          const newTitle = await generateTitle(text);
+          setConversations((prev) =>
+            prev.map((c) =>
+              c.id === currentId ? { ...c, title: newTitle } : c,
+            ),
           );
         }
       } catch (err) {
