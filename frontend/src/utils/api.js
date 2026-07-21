@@ -1,3 +1,36 @@
+export async function streamChat(
+  message,
+  history,
+  onChunk,
+  signal,
+  model,
+  globalContext,
+) {
+  const response = await fetch("http://localhost:5000/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      message,
+      history,
+      model,
+      global_context: globalContext,
+    }),
+    signal, // Allows us to cancel the stream with a Stop button
+  });
+
+  if (!response.ok) throw new Error("Network response was not ok");
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const chunk = decoder.decode(value, { stream: true });
+    onChunk(chunk); // Send chunk to UI
+  }
+}
+
 export async function uploadFile(file, question, onChunk, signal) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();

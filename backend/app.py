@@ -14,7 +14,7 @@ CORS(app)
 
 API_KEY = os.getenv("GROQ_API_KEY")
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
-MODEL = "llama-3.3-70b-versatile"
+DEFAULT_MODEL = "llama-3.3-70b-versatile"
 
 # Upgraded prompts to be less generic and more capable
 SYSTEM_PROMPTS = {
@@ -43,14 +43,14 @@ def route(msg):
     if any(k in m for k in REASON_KW): return "reasoning"
     return "general"
 
-def stream_llama(messages, system):
+def stream_llama(messages, system, model_name):
     """Generator that yields text chunks from Groq API."""
     headers = {
         "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json"
     }
     payload = {
-        "model": MODEL,
+        "model": model_name if model_name else DEFAULT_MODEL,
         "messages": [{"role": "system", "content": system}] + messages,
         "stream": True,
         "temperature": 0.7
@@ -81,20 +81,27 @@ def chat():
     d = request.json
     user_msg = d.get("message", "")
     history = d.get("history", [])
+    model_name = d.get("model", DEFAULT_MODEL)
+    global_context = d.get("global_context", [])
     
     cat = route(user_msg)
     messages = history + [{"role": "user", "content": user_msg}]
     
+    system_prompt = SYSTEM_PROMPTS[cat]
+    
+    # Inject cross-chat context so AI knows what was asked in other chats
+    if global_context:
+        context_str = "\n".join([f"- Chat '{c['title']}': User asked '{c['last_msg']}'" for c in global_context if c.get('last_msg')])
+        system_prompt += f"\n\nThe user has other active conversations. You can reference these if asked about past topics:\n{context_str}"
+    
     # Return a streaming response
     return Response(
-        stream_llama(messages, SYSTEM_PROMPTS[cat]), 
+        stream_llama(messages, system_prompt, model_name), 
         mimetype='text/event-stream'
     )
 
 @app.route("/upload", methods=["POST"])
 def upload():
-    # NOTE: For V2, we should eventually make this stream too,
-    # but keeping it standard for now to get files working.
     d = request.json
     try:
         if d["type"] == "pdf":
@@ -119,7 +126,7 @@ def upload():
 def ask_llama(messages, system):
     """Non-streaming helper for file uploads"""
     r = requests.post(API_URL, headers={"Authorization": f"Bearer {API_KEY}"}, 
-                      json={"model": MODEL, "messages": [{"role":"system","content":system}] + messages})
+                      json={"model": DEFAULT_MODEL, "messages": [{"role":"system","content":system}] + messages})
     if r.status_code != 200:
         return f"Error processing file: {r.text}"
     return r.json()["choices"][0]["message"]["content"]

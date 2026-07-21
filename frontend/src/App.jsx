@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import Sidebar from "./components/Sidebar";
 import ChatArea from "./components/ChatArea";
 import Starfield from "./components/Starfield";
-import { streamChat } from "./utils/api";
+import { streamChat, uploadFile } from "./utils/api";
 
 function App() {
   const [conversations, setConversations] = useState(() => {
@@ -13,7 +13,10 @@ function App() {
   const [searchTerm, setSearchTerm] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [activeCategory, setActiveCategory] = useState("general");
+  const [attachedFile, setAttachedFile] = useState(null);
+  const [selectedModel, setSelectedModel] = useState("llama-3.3-70b-versatile");
   const abortControllerRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   // Ref to hold latest conversations so stream callback doesn't get stale state
   const conversationsRef = useRef(conversations);
@@ -55,10 +58,13 @@ function App() {
 
       setActiveId(currentId);
 
-      const userMsg = { role: "user", content: text };
+      // Include file name in user message if attached
+      const displayText = attachedFile
+        ? `📎 ${attachedFile.name}\n${text}`
+        : text;
+      const userMsg = { role: "user", content: displayText };
       const aiMsg = { role: "assistant", content: "" };
 
-      // Update state with user message + empty AI message
       setConversations((prev) => {
         const updated = prev.map((c) =>
           c.id === currentId
@@ -72,33 +78,67 @@ function App() {
       setIsStreaming(true);
       const controller = new AbortController();
       abortControllerRef.current = controller;
+      const currentFile = attachedFile;
+      setAttachedFile(null); // Clear file from UI immediately
+
+      // Build Global Context (Cross-chat memory)
+      const globalContext = conversationsRef.current
+        .filter((c) => c.id !== currentId)
+        .slice(0, 5) // Limit to 5 most recent chats to save tokens
+        .map((c) => ({
+          title: c.title,
+          last_msg:
+            c.messages.filter((m) => m.role === "user").pop()?.content || "",
+        }));
 
       try {
-        await streamChat(
-          text,
-          history,
-          (chunk) => {
-            // Use functional update to safely append the chunk
-            setConversations((prev) => {
-              const updated = prev.map((c) => {
-                if (c.id !== currentId) return c;
-                const msgs = [...c.messages];
-                const lastMsgIdx = msgs.length - 1;
-                if (msgs[lastMsgIdx].role === "assistant") {
-                  // Append chunk directly to the existing string
-                  msgs[lastMsgIdx] = {
-                    ...msgs[lastMsgIdx],
-                    content: msgs[lastMsgIdx].content + chunk,
+        if (currentFile) {
+          // Non-streaming file upload route
+          await uploadFile(
+            currentFile,
+            text,
+            (chunk) => {
+              setConversations((prev) => {
+                const updated = prev.map((c) => {
+                  if (c.id !== currentId) return c;
+                  const msgs = [...c.messages];
+                  msgs[msgs.length - 1] = {
+                    ...msgs[msgs.length - 1],
+                    content: msgs[msgs.length - 1].content + chunk,
                   };
-                }
-                return { ...c, messages: msgs };
+                  return { ...c, messages: msgs };
+                });
+                conversationsRef.current = updated;
+                return updated;
               });
-              conversationsRef.current = updated;
-              return updated;
-            });
-          },
-          controller.signal,
-        );
+            },
+            controller.signal,
+          );
+        } else {
+          // Standard streaming chat
+          await streamChat(
+            text,
+            history,
+            (chunk) => {
+              setConversations((prev) => {
+                const updated = prev.map((c) => {
+                  if (c.id !== currentId) return c;
+                  const msgs = [...c.messages];
+                  msgs[msgs.length - 1] = {
+                    ...msgs[msgs.length - 1],
+                    content: msgs[msgs.length - 1].content + chunk,
+                  };
+                  return { ...c, messages: msgs };
+                });
+                conversationsRef.current = updated;
+                return updated;
+              });
+            },
+            controller.signal,
+            selectedModel,
+            globalContext,
+          );
+        }
       } catch (err) {
         if (err.name !== "AbortError") {
           console.error("Streaming error:", err);
@@ -108,7 +148,7 @@ function App() {
         abortControllerRef.current = null;
       }
     },
-    [activeId],
+    [activeId, attachedFile, selectedModel],
   );
 
   const handleStop = () => {
@@ -151,6 +191,11 @@ function App() {
             isStreaming={isStreaming}
             onStop={handleStop}
             category={activeCategory}
+            attachedFile={attachedFile}
+            setAttachedFile={setAttachedFile}
+            fileInputRef={fileInputRef}
+            selectedModel={selectedModel}
+            setSelectedModel={setSelectedModel}
           />
         </main>
       </div>
