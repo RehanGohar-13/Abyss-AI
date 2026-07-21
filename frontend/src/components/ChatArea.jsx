@@ -18,6 +18,7 @@ import {
   RefreshCw,
   Pencil,
   Copy,
+  Download,
 } from "lucide-react";
 
 marked.setOptions({ breaks: true });
@@ -47,6 +48,7 @@ export default function ChatArea({
   toggleSidebar,
   onRegenerate,
   onEditMessage,
+  onExport,
 }) {
   const [input, setInput] = useState("");
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
@@ -64,6 +66,7 @@ export default function ChatArea({
 
   const scrollRef = useRef(null);
   const chatContainerRef = useRef(null);
+  const textareaRef = useRef(null);
 
   const models = [
     {
@@ -84,6 +87,15 @@ export default function ChatArea({
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
+
+  // Auto-resize textarea logic
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (el) {
+      el.style.height = "auto";
+      el.style.height = `${Math.min(el.scrollHeight, 200)}px`; // Max 200px height
+    }
+  }, [input]);
 
   const handleScroll = () => {
     const el = scrollRef.current;
@@ -167,12 +179,19 @@ export default function ChatArea({
     });
   }, [messages, isStreaming]);
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
+  const handleSubmit = () => {
     if ((!input.trim() && !attachedFile) || isStreaming) return;
     onSend(input || "Analyze this file.");
     setInput("");
     setEditingMsgIndex(null);
+  };
+
+  const handleKeyDown = (e) => {
+    // Enter to send, Shift+Enter for newline
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit();
+    }
   };
 
   const handleSuggestion = (text) => {
@@ -229,6 +248,17 @@ export default function ChatArea({
         </div>
 
         <div className="flex items-center gap-2 md:gap-3">
+          {/* Export Button */}
+          {messages.length > 0 && (
+            <button
+              onClick={onExport}
+              className="p-2 text-gray-400 hover:text-purple-400 transition-colors rounded-full hover:bg-purple-900/20"
+              title="Export as Markdown"
+            >
+              <Download size={18} />
+            </button>
+          )}
+
           <div className="relative">
             <button
               onClick={() => setIsModelMenuOpen(!isModelMenuOpen)}
@@ -474,7 +504,7 @@ export default function ChatArea({
 
       {/* Input Area */}
       <div className="p-3 md:p-4 bg-gradient-to-t from-black via-black/80 to-transparent">
-        <form onSubmit={handleSubmit} className="max-w-3xl mx-auto">
+        <div className="max-w-3xl mx-auto">
           {attachedFile && (
             <div className="flex items-center gap-2 mb-2 glass rounded-xl px-3 py-2 w-fit">
               <Paperclip size={14} className="text-purple-400" />
@@ -491,7 +521,7 @@ export default function ChatArea({
             </div>
           )}
 
-          <div className="flex items-center gap-2 glass rounded-2xl p-2 focus-within:border-purple-500 focus-within:glow-accent transition-all">
+          <div className="flex items-end gap-2 glass rounded-2xl p-2 focus-within:border-purple-500 focus-within:glow-accent transition-all">
             <input
               type="file"
               ref={fileInputRef}
@@ -502,7 +532,7 @@ export default function ChatArea({
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="p-2 text-gray-500 hover:text-purple-400 transition-colors rounded-xl hover:bg-purple-900/20"
+              className="p-2 text-gray-500 hover:text-purple-400 transition-colors rounded-xl hover:bg-purple-900/20 mb-[2px]"
               title="Attach File"
             >
               <Paperclip size={18} />
@@ -511,36 +541,38 @@ export default function ChatArea({
             <button
               type="button"
               onClick={() => setWebSearchEnabled(!webSearchEnabled)}
-              className={`p-2 transition-colors rounded-xl ${webSearchEnabled ? "text-purple-400 bg-purple-900/30 glow-accent" : "text-gray-500 hover:text-purple-400 hover:bg-purple-900/20"}`}
+              className={`p-2 transition-colors rounded-xl mb-[2px] ${webSearchEnabled ? "text-purple-400 bg-purple-900/30 glow-accent" : "text-gray-500 hover:text-purple-400 hover:bg-purple-900/20"}`}
               title="Search the Web"
             >
               <Globe size={18} />
             </button>
 
-            <input
-              type="text"
+            <textarea
+              ref={textareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
               placeholder={
                 attachedFile
                   ? "Ask about this file..."
                   : "Transmit message to Abyss..."
               }
-              className="flex-1 bg-transparent px-2 py-2 text-sm focus:outline-none text-gray-200 placeholder-gray-600 font-light"
+              rows={1}
+              className="flex-1 bg-transparent px-2 py-2 text-sm focus:outline-none text-gray-200 placeholder-gray-600 font-light resize-none max-h-[200px] overflow-y-auto"
             />
             {isStreaming ? (
               <button
                 type="button"
                 onClick={onStop}
-                className="p-2 bg-red-900/40 border border-red-500/30 text-red-400 rounded-xl hover:bg-red-900/60 transition-colors"
+                className="p-2 bg-red-900/40 border border-red-500/30 text-red-400 rounded-xl hover:bg-red-900/60 transition-colors mb-[2px]"
               >
                 <Square size={18} fill="currentColor" />
               </button>
             ) : (
               <button
-                type="submit"
+                onClick={handleSubmit}
                 disabled={!input.trim() && !attachedFile}
-                className="p-2 bg-purple-600 text-white rounded-xl hover:bg-purple-500 transition-colors disabled:opacity-20 disabled:cursor-not-allowed glow-accent"
+                className="p-2 bg-purple-600 text-white rounded-xl hover:bg-purple-500 transition-colors disabled:opacity-20 disabled:cursor-not-allowed glow-accent mb-[2px]"
               >
                 <ArrowUp size={18} />
               </button>
@@ -549,9 +581,9 @@ export default function ChatArea({
           <p className="text-center text-[10px] md:text-xs text-gray-700 mt-2 font-cosmic tracking-wider">
             {webSearchEnabled
               ? "WEB SEARCH ACTIVATED - FETCHING REAL-TIME DATA"
-              : "ABYSS HAS CROSS-CHAT MEMORY AND CAN PROCESS FILES"}
+              : "ENTER TO SEND, SHIFT+ENTER FOR NEW LINE"}
           </p>
-        </form>
+        </div>
       </div>
 
       {/* CUSTOM RIGHT-CLICK CONTEXT MENU */}

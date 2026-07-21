@@ -31,6 +31,28 @@ function App() {
 
   const activeConv = conversations.find((c) => c.id === activeId);
 
+  // Helper to clean up empty aborted messages
+  const cleanupAbortedMessage = (currentId) => {
+    setConversations((prev) => {
+      const updated = prev.map((c) => {
+        if (c.id !== currentId) return c;
+        const msgs = [...c.messages];
+        const lastMsg = msgs[msgs.length - 1];
+        // If the AI message is completely empty, remove it entirely
+        if (
+          lastMsg &&
+          lastMsg.role === "assistant" &&
+          lastMsg.content.trim() === ""
+        ) {
+          msgs.pop();
+        }
+        return { ...c, messages: msgs };
+      });
+      conversationsRef.current = updated;
+      return updated;
+    });
+  };
+
   const runStream = useCallback(
     async (currentId, userMsgText, history) => {
       setIsStreaming(true);
@@ -87,7 +109,9 @@ function App() {
           webSearchEnabled,
         );
       } catch (err) {
-        if (err.name !== "AbortError") {
+        if (err.name === "AbortError") {
+          cleanupAbortedMessage(currentId);
+        } else {
           console.error("Streaming error:", err);
         }
       } finally {
@@ -187,6 +211,10 @@ function App() {
       } catch (err) {
         if (err.name !== "AbortError")
           console.error("Upload/Stream error:", err);
+        if (err.name === "AbortError") {
+          cleanupAbortedMessage(currentId);
+          setIsStreaming(false);
+        }
       }
     },
     [activeId, attachedFile, runStream],
@@ -204,12 +232,10 @@ function App() {
       let userMsgIndex = -1;
 
       if (msgIndex !== null) {
-        // Triggered from context menu
         const targetMsg = currentConv.messages[msgIndex];
         if (targetMsg.role === "user") {
           userMsgIndex = msgIndex;
         } else {
-          // If right-clicked on AI message, find the user message right before it
           for (let i = msgIndex; i >= 0; i--) {
             if (currentConv.messages[i].role === "user") {
               userMsgIndex = i;
@@ -218,7 +244,6 @@ function App() {
           }
         }
       } else {
-        // Triggered from bottom button (default behavior)
         userMsgIndex = currentConv.messages
           .map((m) => m.role)
           .lastIndexOf("user");
@@ -304,6 +329,25 @@ function App() {
     if (activeId === id) setActiveId(null);
   };
 
+  const handleExport = () => {
+    if (!activeConv) return;
+    let md = `# ${activeConv.title}\n\n`;
+    activeConv.messages.forEach((m) => {
+      const cleanContent = m.content.split("[SOURCES_JSON]")[0];
+      md +=
+        m.role === "user"
+          ? `**User:**\n${cleanContent}\n\n`
+          : `**Abyss:**\n${cleanContent}\n\n`;
+    });
+    const blob = new Blob([md], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${activeConv.title.replace(/[^a-z0-9]/gi, "_").toLowerCase()}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="flex h-screen overflow-hidden relative z-10">
       <Starfield />
@@ -336,6 +380,7 @@ function App() {
             toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
             onRegenerate={handleRegenerate}
             onEditMessage={handleEditMessage}
+            onExport={handleExport}
           />
         </main>
       </div>
